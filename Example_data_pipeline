@@ -1,0 +1,380 @@
+# Complete Automotive Data Pipeline
+
+import pandas as pd
+import numpy as np
+from datetime import datetime, timedelta
+import sqlite3
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.base import MIMEBase
+from email import encoders
+import os
+import logging
+
+# Setup logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+class AutomotiveDataPipeline:
+    """
+    Automotive Data Pipeline for Order Management and Reporting
+    Simulates Mercedes-Benz Thailand data engineering workflows
+    """
+    
+    def __init__(self, db_path="automotive_data.db"):
+        self.db_path = db_path
+        self.conn = sqlite3.connect(db_path)
+        logger.info(f"Database connection established: {db_path}")
+        
+    def create_sample_data(self):
+        """Create sample automotive data similar to Mercedes-Benz systems"""
+        logger.info("Creating sample automotive data...")
+        
+        # Sample data generation
+        np.random.seed(42)
+        
+        # Dealers data
+        dealers = [
+            {"Dealer_ID": "MB001", "Dealer_Name": "Mercedes-Benz Bangkok", "Region": "Central", "City": "Bangkok"},
+            {"Dealer_ID": "MB002", "Dealer_Name": "Mercedes-Benz Chiang Mai", "Region": "North", "City": "Chiang Mai"},
+            {"Dealer_ID": "MB003", "Dealer_Name": "Mercedes-Benz Phuket", "Region": "South", "City": "Phuket"},
+            {"Dealer_ID": "MB004", "Dealer_Name": "Mercedes-Benz Khon Kaen", "Region": "Northeast", "City": "Khon Kaen"},
+            {"Dealer_ID": "MB005", "Dealer_Name": "Mercedes-Benz Pattaya", "Region": "East", "City": "Pattaya"}
+        ]
+        
+        # Models data (including SMT 25 - Premium Segment)
+        models = [
+            {"Model_Code": "SMT25", "Model_Name": "S-Class AMG 25", "Segment": "Premium", "Engine": "PHEV", "Price_Range": "5M+"},
+            {"Model_Code": "CLS63", "Model_Name": "CLS 63 AMG", "Segment": "Premium", "Engine": "ICE", "Price_Range": "4-5M"},
+            {"Model_Code": "GLC43", "Model_Name": "GLC 43 AMG", "Segment": "SUV", "Engine": "ICE", "Price_Range": "3-4M"},
+            {"Model_Code": "A250", "Model_Name": "A-Class 250", "Segment": "Compact", "Engine": "ICE", "Price_Range": "2-3M"},
+            {"Model_Code": "EQC40", "Model_Name": "EQC 400", "Segment": "SUV", "Engine": "BEV", "Price_Range": "3-4M"},
+            {"Model_Code": "E300", "Model_Name": "E-Class 300", "Segment": "Mid-size", "Engine": "ICE", "Price_Range": "3-4M"}
+        ]
+        
+        # Sales representatives
+        sales_reps = [
+            {"Sales_ID": "S001", "Sales_Name": "Somchai Jaidee", "Dealer_ID": "MB001"},
+            {"Sales_ID": "S002", "Sales_Name": "Siriporn Nakarin", "Dealer_ID": "MB001"},
+            {"Sales_ID": "S003", "Sales_Name": "Prasert Wongtham", "Dealer_ID": "MB002"},
+            {"Sales_ID": "S004", "Sales_Name": "Anchana Srisuk", "Dealer_ID": "MB003"},
+            {"Sales_ID": "S005", "Sales_Name": "Narong Kittisak", "Dealer_ID": "MB004"}
+        ]
+        
+        # Create DataFrames
+        self.dealers_df = pd.DataFrame(dealers)
+        self.models_df = pd.DataFrame(models)
+        self.sales_df = pd.DataFrame(sales_reps)
+        
+        # Generate order data
+        self.generate_order_data()
+        
+        # Save to database
+        self.save_to_database()
+        
+    def generate_order_data(self):
+        """Generate realistic order data with various statuses"""
+        logger.info("Generating order data...")
+        
+        orders = []
+        order_statuses = ["Confirmed", "Delivered", "Cancelled", "Pending"]
+        cancel_reasons = ["Customer Request", "Financing Issue", "Model Discontinuation", "Delivery Delay"]
+        
+        # Generate 500 orders over past 6 months
+        start_date = datetime.now() - timedelta(days=180)
+        
+        for i in range(500):
+            order_date = start_date + timedelta(days=np.random.randint(0, 180))
+            dealer = np.random.choice(self.dealers_df['Dealer_ID'].values)
+            model = np.random.choice(self.models_df['Model_Code'].values)
+            sales_rep = np.random.choice(self.sales_df[self.sales_df['Dealer_ID'] == dealer]['Sales_ID'].values)
+            status = np.random.choice(order_statuses, p=[0.4, 0.3, 0.15, 0.15])
+            
+            # Special handling for SMT25 (premium model)
+            if model == "SMT25":
+                status = np.random.choice(order_statuses, p=[0.6, 0.2, 0.1, 0.1])  # Higher confirmation rate
+            
+            order = {
+                "Order_ID": f"ORD{i+1:04d}",
+                "Order_Date": order_date.strftime("%Y-%m-%d"),
+                "Dealer_ID": dealer,
+                "Sales_ID": sales_rep,
+                "Model_Code": model,
+                "Quantity": np.random.choice([1, 2], p=[0.9, 0.1]),
+                "Order_Status": status,
+                "Cancel_Reason": np.random.choice(cancel_reasons) if status == "Cancelled" else None,
+                "Expected_Delivery": (order_date + timedelta(days=np.random.randint(30, 120))).strftime("%Y-%m-%d"),
+                "Actual_Delivery": (order_date + timedelta(days=np.random.randint(30, 150))).strftime("%Y-%m-%d") if status == "Delivered" else None
+            }
+            orders.append(order)
+        
+        self.orders_df = pd.DataFrame(orders)
+        logger.info(f"Generated {len(orders)} orders")
+        
+    def save_to_database(self):
+        """Save all data to SQLite database"""
+        logger.info("Saving data to database...")
+        
+        self.dealers_df.to_sql("dealers", self.conn, if_exists="replace", index=False)
+        self.models_df.to_sql("models", self.conn, if_exists="replace", index=False)
+        self.sales_df.to_sql("sales_reps", self.conn, if_exists="replace", index=False)
+        self.orders_df.to_sql("orders", self.conn, if_exists="replace", index=False)
+        
+        logger.info("Data saved to database successfully")
+        
+    def extract_smt25_orders(self):
+        """Extract SMT25 orders for special reporting (Premium Model)"""
+        logger.info("Extracting SMT25 orders...")
+        
+        query = """
+        SELECT 
+            o.Order_ID,
+            o.Order_Date,
+            d.Dealer_Name,
+            d.Region,
+            s.Sales_Name,
+            m.Model_Name,
+            o.Quantity,
+            o.Order_Status,
+            o.Cancel_Reason,
+            o.Expected_Delivery,
+            o.Actual_Delivery
+        FROM orders o
+        JOIN dealers d ON o.Dealer_ID = d.Dealer_ID
+        JOIN sales_reps s ON o.Sales_ID = s.Sales_ID
+        JOIN models m ON o.Model_Code = m.Model_Code
+        WHERE o.Model_Code = 'SMT25'
+        ORDER BY o.Order_Date DESC
+        """
+        
+        smt25_df = pd.read_sql_query(query, self.conn)
+        logger.info(f"Extracted {len(smt25_df)} SMT25 orders")
+        
+        return smt25_df
+        
+    def generate_order_bank_report(self):
+        """Generate Order Bank Report (Confirmed but not delivered orders)"""
+        logger.info("Generating Order Bank Report...")
+        
+        query = """
+        SELECT 
+            o.Order_ID,
+            o.Order_Date,
+            d.Dealer_Name,
+            d.Region,
+            s.Sales_Name,
+            m.Model_Name,
+            m.Segment,
+            m.Engine,
+            o.Quantity,
+            o.Expected_Delivery,
+            JULIANDAY(o.Expected_Delivery) - JULIANDAY(DATE('now')) as Days_to_Delivery
+        FROM orders o
+        JOIN dealers d ON o.Dealer_ID = d.Dealer_ID
+        JOIN sales_reps s ON o.Sales_ID = s.Sales_ID
+        JOIN models m ON o.Model_Code = m.Model_Code
+        WHERE o.Order_Status = 'Confirmed'
+        ORDER BY o.Expected_Delivery ASC
+        """
+        
+        order_bank_df = pd.read_sql_query(query, self.conn)
+        logger.info(f"Generated Order Bank Report with {len(order_bank_df)} pending orders")
+        
+        return order_bank_df
+        
+    def generate_cancellation_report(self):
+        """Generate Order Cancellation Analysis"""
+        logger.info("Generating Cancellation Report...")
+        
+        query = """
+        SELECT 
+            o.Order_ID,
+            o.Order_Date,
+            d.Dealer_Name,
+            d.Region,
+            s.Sales_Name,
+            m.Model_Name,
+            m.Segment,
+            o.Cancel_Reason,
+            o.Quantity
+        FROM orders o
+        JOIN dealers d ON o.Dealer_ID = d.Dealer_ID
+        JOIN sales_reps s ON o.Sales_ID = s.Sales_ID
+        JOIN models m ON o.Model_Code = m.Model_Code
+        WHERE o.Order_Status = 'Cancelled'
+        ORDER BY o.Order_Date DESC
+        """
+        
+        cancellation_df = pd.read_sql_query(query, self.conn)
+        logger.info(f"Generated Cancellation Report with {len(cancellation_df)} cancelled orders")
+        
+        return cancellation_df
+        
+    def export_reports(self):
+        """Export reports to Excel files"""
+        logger.info("Exporting reports...")
+        
+        # Create reports directory
+        os.makedirs("reports", exist_ok=True)
+        
+        # Generate reports
+        smt25_report = self.extract_smt25_orders()
+        order_bank_report = self.generate_order_bank_report()
+        cancellation_report = self.generate_cancellation_report()
+        
+        # Export to Excel with multiple sheets
+        with pd.ExcelWriter("reports/automotive_reports.xlsx", engine='openpyxl') as writer:
+            smt25_report.to_excel(writer, sheet_name="SMT25_Orders", index=False)
+            order_bank_report.to_excel(writer, sheet_name="Order_Bank", index=False)
+            cancellation_report.to_excel(writer, sheet_name="Cancellations", index=False)
+            
+        # Export individual CSV files
+        smt25_report.to_csv("reports/smt25_report.csv", index=False)
+        order_bank_report.to_csv("reports/order_bank_report.csv", index=False)
+        cancellation_report.to_csv("reports/cancellation_report.csv", index=False)
+        
+        logger.info("Reports exported successfully")
+        
+        return {
+            "smt25_report": smt25_report,
+            "order_bank_report": order_bank_report,
+            "cancellation_report": cancellation_report
+        }
+        
+    def send_email_report(self, recipient_email, smtp_server="smtp.gmail.com", smtp_port=587):
+        """Send automated email with reports (demo function)"""
+        logger.info(f"Preparing email report for {recipient_email}")
+        
+        # Generate summary statistics
+        reports = self.export_reports()
+        
+        # Create email content
+        subject = f"Automotive Sales Report - {datetime.now().strftime('%Y-%m-%d')}"
+        
+        body = f"""
+        Dear Team,
+        
+        Please find attached the daily automotive sales report.
+        
+        Summary:
+        - SMT25 Orders: {len(reports['smt25_report'])} orders
+        - Order Bank: {len(reports['order_bank_report'])} pending deliveries
+        - Cancellations: {len(reports['cancellation_report'])} cancelled orders
+        
+        Key Insights:
+        - Top performing region: {reports['order_bank_report']['Region'].value_counts().index[0] if len(reports['order_bank_report']) > 0 else 'N/A'}
+        - Orders requiring urgent attention: {len(reports['order_bank_report'][reports['order_bank_report']['Days_to_Delivery'] < 7]) if len(reports['order_bank_report']) > 0 else 0}
+        
+        Best regards,
+        Automotive Data Pipeline System
+        """
+        
+        # Note: Actual email sending would require proper SMTP configuration
+        print("=" * 50)
+        print("EMAIL PREVIEW")
+        print("=" * 50)
+        print(f"To: {recipient_email}")
+        print(f"Subject: {subject}")
+        print(f"Body:\n{body}")
+        print("=" * 50)
+        print("Attachments: automotive_reports.xlsx")
+        print("=" * 50)
+        
+        logger.info("Email report prepared (demo mode)")
+        
+    def generate_dashboard_data(self):
+        """Generate aggregated data for Power BI dashboard"""
+        logger.info("Generating dashboard data...")
+        
+        # Monthly sales summary
+        monthly_summary = pd.read_sql_query("""
+        SELECT 
+            strftime('%Y-%m', o.Order_Date) as Month,
+            m.Segment,
+            m.Engine,
+            COUNT(o.Order_ID) as Order_Count,
+            SUM(o.Quantity) as Total_Units,
+            d.Region
+        FROM orders o
+        JOIN models m ON o.Model_Code = m.Model_Code
+        JOIN dealers d ON o.Dealer_ID = d.Dealer_ID
+        WHERE o.Order_Status IN ('Confirmed', 'Delivered')
+        GROUP BY Month, m.Segment, m.Engine, d.Region
+        ORDER BY Month DESC
+        """, self.conn)
+        
+        # Regional performance
+        regional_performance = pd.read_sql_query("""
+        SELECT 
+            d.Region,
+            d.Dealer_Name,
+            COUNT(o.Order_ID) as Total_Orders,
+            SUM(CASE WHEN o.Order_Status = 'Delivered' THEN 1 ELSE 0 END) as Delivered_Orders,
+            SUM(CASE WHEN o.Order_Status = 'Cancelled' THEN 1 ELSE 0 END) as Cancelled_Orders,
+            ROUND(SUM(CASE WHEN o.Order_Status = 'Delivered' THEN 1.0 ELSE 0 END) / COUNT(o.Order_ID) * 100, 2) as Delivery_Rate
+        FROM orders o
+        JOIN dealers d ON o.Dealer_ID = d.Dealer_ID
+        GROUP BY d.Region, d.Dealer_Name
+        ORDER BY Total_Orders DESC
+        """, self.conn)
+        
+        # Save dashboard data
+        monthly_summary.to_csv("reports/monthly_summary.csv", index=False)
+        regional_performance.to_csv("reports/regional_performance.csv", index=False)
+        
+        logger.info("Dashboard data generated")
+        
+        return {
+            "monthly_summary": monthly_summary,
+            "regional_performance": regional_performance
+        }
+    
+    def run_full_pipeline(self, recipient_email="manager@mercedes-benz.com"):
+        """Run the complete data pipeline"""
+        logger.info("Starting complete data pipeline...")
+        
+        # Step 1: Create sample data
+        self.create_sample_data()
+        
+        # Step 2: Generate reports
+        reports = self.export_reports()
+        
+        # Step 3: Generate dashboard data
+        dashboard_data = self.generate_dashboard_data()
+        
+        # Step 4: Send email report
+        self.send_email_report(recipient_email)
+        
+        logger.info("Complete data pipeline executed successfully!")
+        
+        return {
+            "reports": reports,
+            "dashboard_data": dashboard_data,
+            "status": "success"
+        }
+    
+    def __del__(self):
+        """Close database connection"""
+        if hasattr(self, 'conn'):
+            self.conn.close()
+
+# Demo execution
+if __name__ == "__main__":
+    print(" Automotive Data Pipeline - Portfolio Demo")
+    print("=" * 50)
+    
+    # Initialize pipeline
+    pipeline = AutomotiveDataPipeline()
+    
+    # Run complete pipeline
+    result = pipeline.run_full_pipeline("recruiter@company.com")
+    
+    print("\n Pipeline completed successfully!")
+    print(" Check the 'reports' folder for generated files:")
+    print("   - automotive_reports.xlsx (Multi-sheet report)")
+    print("   - smt25_report.csv (SMT25 specific orders)")
+    print("   - order_bank_report.csv (Pending deliveries)")
+    print("   - cancellation_report.csv (Cancelled orders)")
+    print("   - monthly_summary.csv (Dashboard data)")
+    print("   - regional_performance.csv (Regional analysis)")
