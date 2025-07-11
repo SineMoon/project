@@ -1,0 +1,258 @@
+-- SQL Queries for Automotive Data Analysis Portfolio
+-- Simulating Mercedes-Benz Thailand data analytics work
+
+-- ===========================================
+-- 1. ORDER BANK ANALYSIS (Confirmed orders not yet delivered)
+-- ===========================================
+
+-- Order Bank by Model and Region
+SELECT 
+    m.Model_Name,
+    m.Segment,
+    d.Region,
+    COUNT(o.Order_ID) AS pending_orders,
+    SUM(o.Quantity) AS total_units,
+    AVG(JULIANDAY(o.Expected_Delivery) - JULIANDAY(o.Order_Date)) AS avg_lead_time_days,
+    COUNT(CASE WHEN JULIANDAY(o.Expected_Delivery) - JULIANDAY(DATE('now')) < 7 THEN 1 END) AS urgent_deliveries
+FROM orders o
+JOIN models m ON o.Model_Code = m.Model_Code
+JOIN dealers d ON o.Dealer_ID = d.Dealer_ID
+WHERE o.Order_Status = 'Confirmed'
+GROUP BY m.Model_Name, m.Segment, d.Region
+ORDER BY pending_orders DESC;
+
+-- ===========================================
+-- 2. SMT25 PREMIUM MODEL ANALYSIS
+-- ===========================================
+
+-- SMT25 orders with detailed tracking
+SELECT 
+    o.Order_ID,
+    o.Order_Date,
+    d.Dealer_Name,
+    d.Region,
+    s.Sales_Name,
+    o.Order_Status,
+    o.Expected_Delivery,
+    CASE 
+        WHEN o.Order_Status = 'Delivered' THEN 'Completed'
+        WHEN JULIANDAY(o.Expected_Delivery) - JULIANDAY(DATE('now')) < 0 THEN 'Overdue'
+        WHEN JULIANDAY(o.Expected_Delivery) - JULIANDAY(DATE('now')) <= 7 THEN 'Urgent'
+        ELSE 'On Track'
+    END AS delivery_status,
+    JULIANDAY(o.Expected_Delivery) - JULIANDAY(DATE('now')) AS days_to_delivery
+FROM orders o
+JOIN dealers d ON o.Dealer_ID = d.Dealer_ID
+JOIN sales_reps s ON o.Sales_ID = s.Sales_ID
+WHERE o.Model_Code = 'SMT25'
+ORDER BY o.Order_Date DESC;
+
+-- SMT25 Performance Summary
+SELECT 
+    d.Region,
+    COUNT(o.Order_ID) AS total_smt25_orders,
+    SUM(CASE WHEN o.Order_Status = 'Delivered' THEN 1 ELSE 0 END) AS delivered,
+    SUM(CASE WHEN o.Order_Status = 'Confirmed' THEN 1 ELSE 0 END) AS pending,
+    SUM(CASE WHEN o.Order_Status = 'Cancelled' THEN 1 ELSE 0 END) AS cancelled,
+    ROUND(
+        SUM(CASE WHEN o.Order_Status = 'Delivered' THEN 1.0 ELSE 0 END) / 
+        COUNT(o.Order_ID) * 100, 2
+    ) AS delivery_rate_pct
+FROM orders o
+JOIN dealers d ON o.Dealer_ID = d.Dealer_ID
+WHERE o.Model_Code = 'SMT25'
+GROUP BY d.Region
+ORDER BY total_smt25_orders DESC;
+
+-- ===========================================
+-- 3. CANCELLATION ANALYSIS
+-- ===========================================
+
+-- Cancellation reasons breakdown
+SELECT 
+    o.Cancel_Reason,
+    m.Segment,
+    COUNT(o.Order_ID) AS cancellation_count,
+    ROUND(COUNT(o.Order_ID) * 100.0 / (
+        SELECT COUNT(*) FROM orders WHERE Order_Status = 'Cancelled'
+    ), 2) AS percentage_of_cancellations
+FROM orders o
+JOIN models m ON o.Model_Code = m.Model_Code
+WHERE o.Order_Status = 'Cancelled'
+GROUP BY o.Cancel_Reason, m.Segment
+ORDER BY cancellation_count DESC;
+
+-- Monthly cancellation trends
+SELECT 
+    strftime('%Y-%m', o.Order_Date) AS month,
+    COUNT(o.Order_ID) AS total_orders,
+    SUM(CASE WHEN o.Order_Status = 'Cancelled' THEN 1 ELSE 0 END) AS cancelled_orders,
+    ROUND(
+        SUM(CASE WHEN o.Order_Status = 'Cancelled' THEN 1.0 ELSE 0 END) / 
+        COUNT(o.Order_ID) * 100, 2
+    ) AS cancellation_rate_pct
+FROM orders o
+GROUP BY strftime('%Y-%m', o.Order_Date)
+ORDER BY month DESC;
+
+-- ===========================================
+-- 4. SALES PERFORMANCE ANALYSIS
+-- ===========================================
+
+-- Top performing sales representatives
+SELECT 
+    s.Sales_Name,
+    d.Dealer_Name,
+    d.Region,
+    COUNT(o.Order_ID) AS total_orders,
+    SUM(CASE WHEN o.Order_Status = 'Delivered' THEN 1 ELSE 0 END) AS delivered_orders,
+    SUM(o.Quantity) AS total_units_sold,
+    ROUND(
+        SUM(CASE WHEN o.Order_Status = 'Delivered' THEN 1.0 ELSE 0 END) / 
+        COUNT(o.Order_ID) * 100, 2
+    ) AS success_rate_pct
+FROM orders o
+JOIN sales_reps s ON o.Sales_ID = s.Sales_ID
+JOIN dealers d ON o.Dealer_ID = d.Dealer_ID
+GROUP BY s.Sales_Name, d.Dealer_Name, d.Region
+HAVING COUNT(o.Order_ID) >= 5  -- Minimum 5 orders for meaningful analysis
+ORDER BY success_rate_pct DESC, total_orders DESC;
+
+-- ===========================================
+-- 5. REGIONAL PERFORMANCE COMPARISON
+-- ===========================================
+
+-- Regional performance dashboard
+WITH regional_stats AS (
+    SELECT 
+        d.Region,
+        COUNT(o.Order_ID) AS total_orders,
+        SUM(CASE WHEN o.Order_Status = 'Delivered' THEN 1 ELSE 0 END) AS delivered,
+        SUM(CASE WHEN o.Order_Status = 'Confirmed' THEN 1 ELSE 0 END) AS pending,
+        SUM(CASE WHEN o.Order_Status = 'Cancelled' THEN 1 ELSE 0 END) AS cancelled,
+        COUNT(DISTINCT o.Dealer_ID) AS active_dealers,
+        COUNT(DISTINCT s.Sales_ID) AS active_sales_reps
+    FROM orders o
+    JOIN dealers d ON o.Dealer_ID = d.Dealer_ID
+    JOIN sales_reps s ON o.Sales_ID = s.Sales_ID
+    GROUP BY d.Region
+)
+SELECT 
+    *,
+    ROUND(delivered * 100.0 / total_orders, 2) AS delivery_rate_pct,
+    ROUND(cancelled * 100.0 / total_orders, 2) AS cancellation_rate_pct,
+    ROUND(total_orders * 1.0 / active_dealers, 2) AS orders_per_dealer,
+    ROUND(delivered * 1.0 / active_sales_reps, 2) AS deliveries_per_sales_rep
+FROM regional_stats
+ORDER BY total_orders DESC;
+
+-- ===========================================
+-- 6. ENGINE TYPE AND SEGMENT ANALYSIS
+-- ===========================================
+
+-- BEV vs ICE vs PHEV performance
+SELECT 
+    m.Engine,
+    m.Segment,
+    COUNT(o.Order_ID) AS total_orders,
+    SUM(CASE WHEN o.Order_Status = 'Delivered' THEN 1 ELSE 0 END) AS delivered,
+    SUM(CASE WHEN o.Order_Status = 'Cancelled' THEN 1 ELSE 0 END) AS cancelled,
+    ROUND(
+        SUM(CASE WHEN o.Order_Status = 'Delivered' THEN 1.0 ELSE 0 END) / 
+        COUNT(o.Order_ID) * 100, 2
+    ) AS delivery_rate_pct,
+    AVG(JULIANDAY(o.Expected_Delivery) - JULIANDAY(o.Order_Date)) AS avg_lead_time_days
+FROM orders o
+JOIN models m ON o.Model_Code = m.Model_Code
+GROUP BY m.Engine, m.Segment
+ORDER BY m.Engine, total_orders DESC;
+
+-- ===========================================
+-- 7. TIME-BASED ANALYSIS (for dashboards)
+-- ===========================================
+
+-- Weekly order trends (last 12 weeks)
+SELECT 
+    strftime('%Y-W%W', o.Order_Date) AS week,
+    COUNT(o.Order_ID) AS total_orders,
+    SUM(CASE WHEN o.Order_Status = 'Delivered' THEN 1 ELSE 0 END) AS delivered,
+    SUM(CASE WHEN o.Order_Status = 'Cancelled' THEN 1 ELSE 0 END) AS cancelled,
+    SUM(CASE WHEN m.Model_Code = 'SMT25' THEN 1 ELSE 0 END) AS smt25_orders
+FROM orders o
+JOIN models m ON o.Model_Code = m.Model_Code
+WHERE o.Order_Date >= DATE('now', '-84 days')  -- Last 12 weeks
+GROUP BY strftime('%Y-W%W', o.Order_Date)
+ORDER BY week DESC;
+
+-- ===========================================
+-- 8. ADVANCED ANALYTICS QUERIES
+-- ===========================================
+
+-- Rolling 3-month order analysis
+WITH monthly_orders AS (
+    SELECT 
+        strftime('%Y-%m', o.Order_Date) AS month,
+        d.Region,
+        COUNT(o.Order_ID) AS monthly_orders
+    FROM orders o
+    JOIN dealers d ON o.Dealer_ID = d.Dealer_ID
+    GROUP BY strftime('%Y-%m', o.Order_Date), d.Region
+)
+SELECT 
+    month,
+    Region,
+    monthly_orders,
+    AVG(monthly_orders) OVER (
+        PARTITION BY Region 
+        ORDER BY month 
+        ROWS BETWEEN 2 PRECEDING AND CURRENT ROW
+    ) AS rolling_3_month_avg
+FROM monthly_orders
+ORDER BY Region, month DESC;
+
+-- Cohort analysis: Order completion by month
+SELECT 
+    strftime('%Y-%m', o.Order_Date) AS order_month,
+    COUNT(o.Order_ID) AS total_orders,
+    SUM(CASE WHEN o.Order_Status = 'Delivered' THEN 1 ELSE 0 END) AS completed_orders,
+    ROUND(
+        SUM(CASE WHEN o.Order_Status = 'Delivered' THEN 1.0 ELSE 0 END) / 
+        COUNT(o.Order_ID) * 100, 2
+    ) AS completion_rate_pct,
+    AVG(
+        CASE WHEN o.Actual_Delivery IS NOT NULL 
+        THEN JULIANDAY(o.Actual_Delivery) - JULIANDAY(o.Order_Date)
+        END
+    ) AS avg_actual_delivery_days
+FROM orders o
+GROUP BY strftime('%Y-%m', o.Order_Date)
+HAVING COUNT(o.Order_ID) >= 10  -- Minimum sample size
+ORDER BY order_month DESC;
+
+-- ===========================================
+-- 9. DATA QUALITY CHECKS
+-- ===========================================
+
+-- Data quality validation queries
+SELECT 'Missing Sales Rep' AS issue, COUNT(*) AS count
+FROM orders o
+LEFT JOIN sales_reps s ON o.Sales_ID = s.Sales_ID
+WHERE s.Sales_ID IS NULL
+
+UNION ALL
+
+SELECT 'Missing Delivery Date for Delivered Orders' AS issue, COUNT(*) AS count
+FROM orders 
+WHERE Order_Status = 'Delivered' AND Actual_Delivery IS NULL
+
+UNION ALL
+
+SELECT 'Orders with Future Order Date' AS issue, COUNT(*) AS count
+FROM orders 
+WHERE Order_Date > DATE('now')
+
+UNION ALL
+
+SELECT 'Cancelled Orders Missing Reason' AS issue, COUNT(*) AS count
+FROM orders 
+WHERE Order_Status = 'Cancelled' AND (Cancel_Reason IS NULL OR Cancel_Reason = '');
