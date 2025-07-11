@@ -1,0 +1,15 @@
+-- Remove duplicate entries and retain the most accurate records
+
+%sql
+WITH ranked_data AS (
+    SELECT 
+        *,
+        ROW_NUMBER() OVER (
+            PARTITION BY trim(DLT_Model_Name)
+            ORDER BY trim(Report_Name) ASC
+        ) AS row_num
+    FROM thailand_customdb.database_dlt
+)
+SELECT *
+FROM ranked_data
+WHERE row_num = 1;
