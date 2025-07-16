@@ -1,0 +1,127 @@
+# Sample data processing for Power BI Dashboard (based on slides 38-42)
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Create sample automotive registration data similar to dashboard
+np.random.seed(42)
+
+# Sample brands data
+brands = ['TOYOTA', 'HONDA', 'BYD', 'MITSUBISHI', 'MG', 'ISUZU', 'BMW', 'MAZDA', 'FORD', 'MERCEDES BENZ']
+years = range(2018, 2025)
+months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+# Create registration data
+registration_data = []
+for year in years:
+    for month in months:
+        for brand in brands:
+            # Simulate registration numbers with some realistic patterns
+            base_registrations = np.random.poisson(500)
+            
+            # Add trends for EV brands
+            if brand in ['BYD', 'MG'] and year >= 2022:
+                base_registrations *= 3
+            elif brand == 'TESLA' and year >= 2020:
+                base_registrations *= 2
+                
+            registration_data.append({
+                'Year': year,
+                'Month': month,
+                'Brand': brand,
+                'Units': base_registrations,
+                'Engine': np.random.choice(['ICE', 'BEV', 'PHEV'], p=[0.7, 0.25, 0.05]),
+                'Segment': np.random.choice(['Compact', 'Mid-size', 'Full-size', 'Large'], p=[0.4, 0.3, 0.2, 0.1]),
+                'Price_Range_THB': np.random.choice(['0-1M', '1-2M', '2-3M', '3-4M', '4M+'], p=[0.4, 0.3, 0.15, 0.1, 0.05])
+            })
+
+df_dashboard = pd.DataFrame(registration_data)
+
+# Calculate BEV share analysis (similar to slide 39)
+bev_analysis = df_dashboard[df_dashboard['Engine'] == 'BEV'].groupby(['Year', 'Month']).agg({
+    'Units': 'sum'
+}).reset_index()
+
+total_analysis = df_dashboard.groupby(['Year', 'Month']).agg({
+    'Units': 'sum'
+}).reset_index()
+
+# Merge and calculate BEV percentage
+bev_share = bev_analysis.merge(total_analysis, on=['Year', 'Month'], suffixes=('_BEV', '_Total'))
+bev_share['BEV_Percentage'] = (bev_share['Units_BEV'] / bev_share['Units_Total']) * 100
+
+print("BEV Share Analysis:")
+print(bev_share.head(10))
+
+# Top brands analysis (similar to slide 40)
+brand_summary = df_dashboard.groupby('Brand').agg({
+    'Units': ['sum', 'mean']
+}).round(2)
+
+brand_summary.columns = ['Total_Units', 'Avg_Monthly_Units']
+brand_summary = brand_summary.sort_values('Total_Units', ascending=False)
+
+print("\nTop Brands by Registration:")
+print(brand_summary.head(10))
+
+# Monthly trend analysis
+monthly_trend = df_dashboard.groupby(['Year', 'Month']).agg({
+    'Units': 'sum'
+}).reset_index()
+
+# Create visualizations
+plt.figure(figsize=(15, 10))
+
+# Plot 1: BEV Share Over Time
+plt.subplot(2, 2, 1)
+monthly_bev = bev_share.groupby('Year')['BEV_Percentage'].mean()
+plt.plot(monthly_bev.index, monthly_bev.values, marker='o', linewidth=2)
+plt.title('BEV Market Share by Year')
+plt.xlabel('Year')
+plt.ylabel('BEV Percentage (%)')
+plt.grid(True, alpha=0.3)
+
+# Plot 2: Top Brands Registration
+plt.subplot(2, 2, 2)
+top_brands = brand_summary.head(8)
+plt.bar(range(len(top_brands)), top_brands['Total_Units'])
+plt.title('Total Registrations by Brand')
+plt.xlabel('Brand')
+plt.ylabel('Total Units')
+plt.xticks(range(len(top_brands)), top_brands.index, rotation=45)
+
+# Plot 3: Engine Type Distribution
+plt.subplot(2, 2, 3)
+engine_dist = df_dashboard.groupby('Engine')['Units'].sum()
+plt.pie(engine_dist.values, labels=engine_dist.index, autopct='%1.1f%%')
+plt.title('Engine Type Distribution')
+
+# Plot 4: Monthly Registration Trend
+plt.subplot(2, 2, 4)
+yearly_trend = df_dashboard.groupby('Year')['Units'].sum()
+plt.plot(yearly_trend.index, yearly_trend.values, marker='s', linewidth=2, color='green')
+plt.title('Total Registrations by Year')
+plt.xlabel('Year')
+plt.ylabel('Total Units')
+plt.grid(True, alpha=0.3)
+
+plt.tight_layout()
+plt.show()
+
+# Export data for Power BI
+df_dashboard.to_csv('automotive_registration_data.csv', index=False)
+bev_share.to_csv('bev_share_analysis.csv', index=False)
+brand_summary.to_csv('brand_summary.csv')
+
+print("\nData exported for Power BI dashboard:")
+print("- automotive_registration_data.csv")
+print("- bev_share_analysis.csv") 
+print("- brand_summary.csv")
+
+# Sample DAX-like calculations (for Power BI reference)
+print("\nSample calculations for Power BI:")
+print("MTD Growth = (Current Month Units - Previous Month Units) / Previous Month Units")
+print("YTD Total = SUM(Units) for current year")
+print("Market Share = Brand Units / Total Market Units * 100")
+print("BEV Penetration = BEV Units / Total Units * 100")
