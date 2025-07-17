@@ -33,6 +33,7 @@
 - **95% improvement** in data accuracy through automated validation
 - **Daily insights** delivery instead of weekly reporting
 - **Cross-functional collaboration** enhancement via standardized reporting
+  Presentation link:https://www.canva.com/design/DAGXdA6JSKI/KQWbr7W6OfngwkiSX8-eqA/edit?utm_content=DAGXdA6JSKI&utm_campaign=designshare&utm_medium=link2&utm_source=sharebutton 
 
 ---
 
