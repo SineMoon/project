@@ -29,7 +29,7 @@
 - **Executive Reporting Suite** - Power BI dashboards for strategic decision making
 
 **📈 Business Impact:**
-- **4 hours → 10 minutes** report generation time
+- **Short** report generation time
 - **95% improvement** in data accuracy through automated validation
 - **Daily insights** delivery instead of weekly reporting
 - **Cross-functional collaboration** enhancement via standardized reporting
